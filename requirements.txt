@@ -5,3 +5,4 @@ sqlalchemy
 uvicorn
 python-multipart
 zipstream-ng
+requests
