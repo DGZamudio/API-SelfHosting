@@ -1,5 +1,5 @@
 from typing import List
-from sqlalchemy import bindparam, update
+from sqlalchemy import bindparam, func, update
 from sqlalchemy.orm import Session
 from app.models.artist import Artist
 from app.models.album import Album
@@ -66,7 +66,7 @@ def mark_songs(
     ids: List[str]
 ):
     result = db.execute(
-        update(Song).where(Song.yt_video_id.in_(ids)).values(status="downloaded")
+        update(Song).where(Song.yt_video_id.in_(ids)).values(status="downloaded", downloaded_at=func.now())
     )
     db.commit()
     return result

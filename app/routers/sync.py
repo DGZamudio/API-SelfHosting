@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from zipstream import ZipStream
-from app.config import DOWNLOADS_FOLDER
+from app.config import SONGS_DOWNLOADS_FOLDER
 from app.schemas.song import SongCreate
 from app.services import song_service, ytdlp_service
 from app.database import get_db
@@ -21,7 +21,7 @@ def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_db)
         ytdlp_service.download_song(str(song.source_url))
         yt_ids.append(str(song.yt_video_id))
         
-    zs = ZipStream.from_path(DOWNLOADS_FOLDER)
+    zs = ZipStream.from_path(SONGS_DOWNLOADS_FOLDER)
     
     background_tasks.add_task(song_service.mark_songs, db, yt_ids)
     

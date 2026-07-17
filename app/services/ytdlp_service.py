@@ -1,10 +1,11 @@
 import os
+import requests
+import yt_dlp
 from fastapi import HTTPException
 from pydantic import HttpUrl
-import yt_dlp
+from mutagen.id3 import ID3, APIC, error
 from mutagen.easyid3 import EasyID3
-
-from app.config import DOWNLOADS_FOLDER, FFMPEG_PATH, TEMP_DOWNLOADS_FOLDER
+from app.config import FFMPEG_PATH, SONGS_DOWNLOADS_FOLDER, TEMP_DOWNLOADS_FOLDER
 
 def get_song_metadata(url: HttpUrl):
     try:
@@ -39,9 +40,33 @@ def get_song_metadata(url: HttpUrl):
         return meta
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hubo un error al obtener la canción: {e}")
+    
+def download_thumbnail(thumbnail_url: str | None):
+    if not thumbnail_url:
+        return
+    response = requests.get(str(thumbnail_url))
+    response.raise_for_status()
+    return {"bytes": response.content, "type": response.headers["Content-Type"]}
 
+def add_thumbnail(ruta_mp3: str, imagen_bytes: bytes, mime: str = "image/jpeg"):
+    try:
+        audio = ID3(ruta_mp3)
+    except error:
+        audio = ID3()
+
+    audio.add(
+        APIC(
+            encoding=3,
+            mime=mime,
+            type=3,
+            desc="Cover",
+            data=imagen_bytes
+        )
+    )
+    audio.save(ruta_mp3)
+    
 def download_song(url: str, temp=False):
-    save_path = TEMP_DOWNLOADS_FOLDER if temp else DOWNLOADS_FOLDER
+    save_path = TEMP_DOWNLOADS_FOLDER if temp else SONGS_DOWNLOADS_FOLDER
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{
@@ -61,7 +86,8 @@ def download_song(url: str, temp=False):
         titulo = info.get('track', info.get('title'))
         artista = info.get('artist', info.get('uploader'))
         album = info.get('album', 'Álbum Desconocido')
-        
+        portada = info.get('thumbnail')
+
     nombre_final = os.path.join(save_path, f"{titulo}.mp3".replace("/", "-"))
 
     if os.path.exists(archivo_inicial):
@@ -76,6 +102,11 @@ def download_song(url: str, temp=False):
         audio['album'] = album
         audio.save()
         
+        dih = download_thumbnail(portada)
+        print("Imagen descargada:", dih is not None, "tamaño:", len(dih["bytes"]) if dih else 0)
+        if dih:
+            add_thumbnail(nombre_final, dih["bytes"], mime=dih["type"])
+            
         return nombre_final
     except Exception as e:
         raise e
