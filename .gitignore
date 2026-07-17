@@ -1,1 +1,3 @@
-/EntornoLocal
+EntornoLocal
+__pycache__
+music.db
