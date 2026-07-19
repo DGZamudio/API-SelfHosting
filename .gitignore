@@ -1,3 +1,6 @@
 EntornoLocal
 __pycache__
 music.db
+downloads/songs/*
+downloads/temp/*
+downloads/thumbnails/*

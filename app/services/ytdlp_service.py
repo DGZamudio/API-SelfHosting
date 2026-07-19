@@ -1,11 +1,14 @@
 import os
+import io
 import requests
 import yt_dlp
+from pathlib import Path
+from PIL import Image
 from fastapi import HTTPException
 from pydantic import HttpUrl
 from mutagen.id3 import ID3, APIC, error
 from mutagen.easyid3 import EasyID3
-from app.config import FFMPEG_PATH, SONGS_DOWNLOADS_FOLDER, TEMP_DOWNLOADS_FOLDER
+from app.config import FFMPEG_PATH, SONGS_DOWNLOADS_FOLDER, TEMP_DOWNLOADS_FOLDER, THUMBNAILS_DOWNLOADS_FOLDER
 
 def get_song_metadata(url: HttpUrl):
     try:
@@ -41,14 +44,44 @@ def get_song_metadata(url: HttpUrl):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hubo un error al obtener la canción: {e}")
     
-def download_thumbnail(thumbnail_url: str | None):
+def thumbnail_exists(album_name: str) -> Path | None:
+    local_path = os.path.join(THUMBNAILS_DOWNLOADS_FOLDER, f"{album_name}.jpg")
+    thumbnail = Path(local_path)
+    
+    if thumbnail.exists():
+        return thumbnail
+    else:
+        return None
+    
+def download_thumbnail(thumbnail_url: str | None) -> bytes | None:
     if not thumbnail_url:
         return
     response = requests.get(str(thumbnail_url))
     response.raise_for_status()
-    return {"bytes": response.content, "type": response.headers["Content-Type"]}
+    
+    return response.content
 
-def add_thumbnail(ruta_mp3: str, imagen_bytes: bytes, mime: str = "image/jpeg"):
+def process_img(img_bytes: bytes, album_name: str) -> bytes:
+    pil_img = Image.open(io.BytesIO(img_bytes))
+    pil_img = pil_img.convert("RGB")
+    
+    w, h = pil_img.size
+    start_point = w//2-h//2
+    portrait = (start_point, 0, start_point+h, h)
+    recortada = pil_img.crop(portrait)
+
+    save_path = os.path.join(THUMBNAILS_DOWNLOADS_FOLDER , f"{album_name.replace("/", "-")}.jpg")
+    
+    buffer = io.BytesIO()
+    recortada.save(buffer, format="JPEG")
+    bytes_finales = buffer.getvalue()
+
+    with open(save_path, "wb") as f:
+        f.write(bytes_finales)
+
+    return bytes_finales
+
+def add_thumbnail(ruta_mp3: str, image_bytes: bytes, mime: str = "image/jpeg"):
     try:
         audio = ID3(ruta_mp3)
     except error:
@@ -60,7 +93,7 @@ def add_thumbnail(ruta_mp3: str, imagen_bytes: bytes, mime: str = "image/jpeg"):
             mime=mime,
             type=3,
             desc="Cover",
-            data=imagen_bytes
+            data=image_bytes
         )
     )
     audio.save(ruta_mp3)
@@ -102,11 +135,17 @@ def download_song(url: str, temp=False):
         audio['album'] = album
         audio.save()
         
-        dih = download_thumbnail(portada)
-        print("Imagen descargada:", dih is not None, "tamaño:", len(dih["bytes"]) if dih else 0)
-        if dih:
-            add_thumbnail(nombre_final, dih["bytes"], mime=dih["type"])
-            
+        thumbnail_path = thumbnail_exists(album)
+        
+        if thumbnail_path:
+            with thumbnail_path.open('rb') as image_bytes:
+                add_thumbnail(nombre_final, image_bytes.read())
+        else:
+            thumbnail_bytes = download_thumbnail(portada)
+            if thumbnail_bytes:
+                image_bytes = process_img(thumbnail_bytes, album)
+                add_thumbnail(nombre_final, image_bytes)
+                
         return nombre_final
     except Exception as e:
-        raise e
+        raise Exception(f"Fallo procesando {titulo}: {e}")
