@@ -6,9 +6,11 @@ from pathlib import Path
 from PIL import Image
 from fastapi import HTTPException
 from pydantic import HttpUrl
-from mutagen.id3 import ID3, APIC, error
+from mutagen.id3 import ID3, APIC, TALB, TIT2, TPE1, USLT, error
 from mutagen.easyid3 import EasyID3
+from yt_dlp.utils import DownloadError
 from app.config import FFMPEG_PATH, SONGS_DOWNLOADS_FOLDER, TEMP_DOWNLOADS_FOLDER, THUMBNAILS_DOWNLOADS_FOLDER
+from app.utils import clean_filename, limpiar_archivo_parcial
 
 def get_song_metadata(url: HttpUrl):
     try:
@@ -70,7 +72,7 @@ def process_img(img_bytes: bytes, album_name: str) -> bytes:
     portrait = (start_point, 0, start_point+h, h)
     recortada = pil_img.crop(portrait)
 
-    save_path = os.path.join(THUMBNAILS_DOWNLOADS_FOLDER , f"{album_name.replace("/", "-")}.jpg")
+    save_path = os.path.join(THUMBNAILS_DOWNLOADS_FOLDER , f"{clean_filename(album_name)}.jpg")
     
     buffer = io.BytesIO()
     recortada.save(buffer, format="JPEG")
@@ -81,13 +83,8 @@ def process_img(img_bytes: bytes, album_name: str) -> bytes:
 
     return bytes_finales
 
-def add_thumbnail(ruta_mp3: str, image_bytes: bytes, mime: str = "image/jpeg"):
-    try:
-        audio = ID3(ruta_mp3)
-    except error:
-        audio = ID3()
-
-    audio.add(
+def add_thumbnail(audio_obj: ID3, image_bytes: bytes, mime: str = "image/jpeg"):
+    audio_obj.add(
         APIC(
             encoding=3,
             mime=mime,
@@ -96,8 +93,21 @@ def add_thumbnail(ruta_mp3: str, image_bytes: bytes, mime: str = "image/jpeg"):
             data=image_bytes
         )
     )
-    audio.save(ruta_mp3)
     
+def get_lyrics(title: str, artist: str) -> str | None:
+    params = {
+        "track_name": title,
+        "artist_name": artist,
+    }
+    response = requests.get("https://lrclib.net/api/search", params=params)
+    response.raise_for_status()
+    resultados = response.json()
+
+    if not resultados:
+        return None
+
+    return resultados[0].get("plainLyrics")
+
 def download_song(url: str, temp=False):
     save_path = TEMP_DOWNLOADS_FOLDER if temp else SONGS_DOWNLOADS_FOLDER
     ydl_opts = {
@@ -108,44 +118,82 @@ def download_song(url: str, temp=False):
             'preferredquality': '192',
         }],
         'outtmpl': os.path.join(save_path, '%(id)s.%(ext)s'), 
-        'ffmpeg_location': FFMPEG_PATH
+        'ffmpeg_location': FFMPEG_PATH,
+        'quiet': True
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        id_video = info.get('id')
-        archivo_inicial = os.path.join(save_path,  f"{id_video}.mp3")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            id_video = info.get('id')
+            archivo_inicial = os.path.join(save_path,  f"{id_video}.mp3")
 
-        titulo = info.get('track', info.get('title'))
-        artista = info.get('artist', info.get('uploader'))
-        album = info.get('album', 'Álbum Desconocido')
-        portada = info.get('thumbnail')
+            titulo = info.get('track', info.get('title'))
+            artista = info.get('artist', info.get('uploader'))
+            album = info.get('album', 'Álbum Desconocido')
+            portada = info.get('thumbnail')
 
-    nombre_final = os.path.join(save_path, f"{titulo}.mp3".replace("/", "-"))
-
-    if os.path.exists(archivo_inicial):
-        os.rename(archivo_inicial, nombre_final)
-    else:
-        raise FileNotFoundError()
+        nombre_limpio = clean_filename(f"{titulo}.mp3")
+        nombre_final = os.path.join(save_path, nombre_limpio)
+        
+        if os.path.exists(archivo_inicial):
+            os.rename(archivo_inicial, nombre_final)
+        else:
+            raise FileNotFoundError()
+    
+    except Exception as e:
+        limpiar_archivo_parcial()
+        raise HTTPException(status_code=400, detail=f"No se pudo descargar la canción, intenta de nuevo, error:{e}") from e
 
     try:
-        audio = EasyID3(nombre_final)
-        audio['title'] = titulo
-        audio['artist'] = artista
-        audio['album'] = album
-        audio.save()
+        try:
+            audio = ID3(nombre_final)
+        except error:
+            audio = ID3()
         
-        thumbnail_path = thumbnail_exists(album)
+        errors = []
         
-        if thumbnail_path:
-            with thumbnail_path.open('rb') as image_bytes:
-                add_thumbnail(nombre_final, image_bytes.read())
-        else:
-            thumbnail_bytes = download_thumbnail(portada)
-            if thumbnail_bytes:
-                image_bytes = process_img(thumbnail_bytes, album)
-                add_thumbnail(nombre_final, image_bytes)
+        try:
+            # Inyección de metadatos nativos
+            audio.add(TIT2(encoding=3, text=titulo))
+            audio.add(TPE1(encoding=3, text=artista))
+            audio.add(TALB(encoding=3, text=album))
+        except:
+            errors.append('Error al agregar la metadata')
+        
+        try:
+            # Procesamiento de la carátula
+            thumbnail_path = thumbnail_exists(album)
+            
+            if thumbnail_path:
+                with thumbnail_path.open('rb') as image_bytes:
+                    add_thumbnail(audio, image_bytes.read())
+            else:
+                thumbnail_bytes = download_thumbnail(portada)
+                if thumbnail_bytes:
+                    image_bytes = process_img(thumbnail_bytes, album)
+                    add_thumbnail(audio, image_bytes)
+        except:
+            errors.append('Error al agregar la carátula')
+            
+        try:
+            # Procesamiento de letra
+            if titulo and artista:
+                letra = get_lyrics(title=titulo, artist=artista)
+                if letra:
+                    audio.add(
+                        USLT(
+                            encoding=3,
+                            lang="eng",
+                            desc="",
+                            text=letra
+                        )
+                    )
+        except:
+            errors.append('Error al agregar la letra')
                 
-        return nombre_final
+        audio.save(nombre_final)
+        
+        return {'path':nombre_final, 'errors':errors}
     except Exception as e:
-        raise Exception(f"Fallo procesando {titulo}: {e}")
+        raise Exception(f"Fallo procesando {titulo}: {e}") from e
