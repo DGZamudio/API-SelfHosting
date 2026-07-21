@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from app.schemas.song import SongCreate
 from app.services import ytdlp_service, song_service
@@ -10,12 +10,14 @@ router = APIRouter(
 )
 
 @router.post("/")
-def add_song(song: SongCreate, db: Session = Depends(get_db)):
+def add_song(song: SongCreate, preview: bool = Query(True), db: Session = Depends(get_db)):
     metadata = ytdlp_service.get_song_metadata(song.url)
-    result = song_service.add_song_from_metadata(db, metadata)
-    if not result:
-        raise HTTPException(status_code=409, detail="Esta canción ya existe en el registro")
-    return result
+    result = None
+    if not preview:
+        result = song_service.add_song_from_metadata(db, metadata)
+        if not result:
+            raise HTTPException(status_code=409, detail="Esta canción ya existe en el registro")
+    return {'result':result, 'metadata':metadata}
 
 @router.get("/")
 def list_songs(db: Session = Depends(get_db)):

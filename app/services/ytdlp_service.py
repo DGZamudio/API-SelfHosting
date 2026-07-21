@@ -32,6 +32,7 @@ def get_song_metadata(url: HttpUrl):
             titulo = info.get('track', info.get('title'))
             artista = info.get('artist', info.get('uploader'))
             album = info.get('album', 'Álbum Desconocido')
+            portada = info.get('thumbnail')
     
         
         meta = {
@@ -39,7 +40,8 @@ def get_song_metadata(url: HttpUrl):
             'url': url,
             'title': titulo,
             'artist': artista,
-            'album': album    
+            'album': album,
+            'thumbnail':portada
         }
         
         return meta
