@@ -34,7 +34,3 @@ def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_db)
             "Last-Modified": zs.last_modified.strftime('%Y-%m-%d %H:%M:%S')
         }
     )
-
-@router.post("/download")
-def descargar_cancion(song: SongCreate):
-    return ytdlp_service.download_song(str(song.url), temp=True)

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.schemas.song import SongCreate
 from app.services import ytdlp_service, song_service
@@ -10,7 +11,7 @@ router = APIRouter(
 )
 
 @router.post("/")
-def add_song(song: SongCreate, preview: bool = Query(True), db: Session = Depends(get_db)):
+def add_song(song: SongCreate, preview: bool = Query(False), db: Session = Depends(get_db)):
     metadata = ytdlp_service.get_song_metadata(song.url)
     result = None
     if not preview:
@@ -23,6 +24,14 @@ def add_song(song: SongCreate, preview: bool = Query(True), db: Session = Depend
 def list_songs(db: Session = Depends(get_db)):
     return song_service.list_songs(db)
 
-# @router.delete("/{song_id}")
-# def delete_song(song_id: int):
-#     return song_service.delete_song(song_id)
+@router.post("/download")
+def descargar_cancion(song: SongCreate):
+    res = ytdlp_service.download_song(str(song.url), temp=True)
+    if res.get('path'):
+        return FileResponse(
+            path=res['path'],
+            media_type="audio/mpeg",
+            filename=f"{res['metadata'].get('title')}.mp3"
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Hubo un error descargando la canción")

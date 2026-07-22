@@ -135,8 +135,20 @@ def download_song(url: str, temp=False):
             album = info.get('album', 'Álbum Desconocido')
             portada = info.get('thumbnail')
 
+        meta = {
+            'video_id': id_video,
+            'url': url,
+            'title': titulo,
+            'artist': artista,
+            'album': album,
+            'thumbnail':portada
+        }
+
         nombre_limpio = clean_filename(f"{titulo}.mp3")
         nombre_final = os.path.join(save_path, nombre_limpio)
+        
+        if os.path.exists(nombre_final):
+            return {'path':nombre_final, 'metadata': meta, 'errors':[]}
         
         if os.path.exists(archivo_inicial):
             os.rename(archivo_inicial, nombre_final)
@@ -196,6 +208,6 @@ def download_song(url: str, temp=False):
                 
         audio.save(nombre_final)
         
-        return {'path':nombre_final, 'errors':errors}
+        return {'path':nombre_final, 'metadata': meta, 'errors':errors}
     except Exception as e:
         raise Exception(f"Fallo procesando {titulo}: {e}") from e
