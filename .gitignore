@@ -1,4 +1,5 @@
 EntornoLocal
+.venv
 __pycache__
 music.db
 downloads/songs/*

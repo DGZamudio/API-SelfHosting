@@ -1,9 +1,10 @@
-from typing import List
-from sqlalchemy import bindparam, func, update
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
-from app.models.artist import Artist
+
 from app.models.album import Album
+from app.models.artist import Artist
 from app.models.song import Song
+
 
 def list_songs(db: Session, status: str | None = None):
     query = db.query(Song)
@@ -61,9 +62,42 @@ def add_song_from_metadata(
     db.refresh(song)
     return song
 
+def add_songs_from_metadata(db: Session, songs: list[dict]) -> list[Song]:
+    nuevas = []
+    for cancion in songs:
+        existing = db.query(Song).filter(Song.yt_video_id == cancion["video_id"]).first()
+        if existing:
+            continue
+
+        artist = get_or_create_artist(db, cancion["artist"])
+        album = (
+            get_or_create_album(db, cancion["album"], artist, yt_playlist_id=None)
+            if cancion.get("album")
+            else None
+        )
+
+        nuevas.append(
+            Song(
+                yt_video_id=cancion["video_id"],
+                title=cancion["title"],
+                artist=artist,
+                album=album,
+                source_url=str(cancion["url"]),
+                status="pending",
+            )
+        )
+
+    if nuevas:
+        db.add_all(nuevas)
+        db.commit()
+        for song in nuevas:
+            db.refresh(song)
+
+    return nuevas
+
 def mark_songs(
     db: Session,
-    ids: List[str]
+    ids: list[str]
 ):
     result = db.execute(
         update(Song).where(Song.yt_video_id.in_(ids)).values(status="downloaded", downloaded_at=func.now())

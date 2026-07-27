@@ -1,11 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from zipstream import ZipStream
+
 from app.config import SONGS_DOWNLOADS_FOLDER
-from app.schemas.song import SongCreate
-from app.services import song_service, ytdlp_service
 from app.database import get_db
+from app.services import song_service, ytdlp_service
 
 router = APIRouter(
     prefix="/sync",
