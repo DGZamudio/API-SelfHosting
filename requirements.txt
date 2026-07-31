@@ -1,9 +1,6 @@
 fastapi
 yt-dlp
-mutagen
 sqlalchemy
 uvicorn
 python-multipart
 zipstream-ng
-requests
-pillow

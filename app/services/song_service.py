@@ -45,7 +45,7 @@ def add_song_from_metadata(
     existing = db.query(Song).filter(Song.yt_video_id == metadata["video_id"]).first()
     if existing:
         return None
-    
+
     artist = get_or_create_artist(db, metadata["artist"])
     album = get_or_create_album(db, metadata["album"], artist, yt_playlist_id=None) if metadata["album"] else None
 

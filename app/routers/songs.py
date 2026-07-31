@@ -23,7 +23,7 @@ def add_song(song: SongCreate, background_tasks: BackgroundTasks, preview: bool 
     if data["type"] == "album":
         result = song_service.add_songs_from_metadata(db, data["metadata"])
     else:
-        result = song_service.add_song_from_metadata(db, data["metadata"])
+        result = song_service.add_song_from_metadata(db, data["metadata"][0])
 
     if not result:
         raise HTTPException(status_code=409, detail="Esta canción ya existe en el registro")
