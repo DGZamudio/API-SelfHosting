@@ -1,6 +1,6 @@
+import concurrent.futures
 import os
 import shutil
-from pathlib import Path
 
 import requests
 import yt_dlp
@@ -8,7 +8,10 @@ from fastapi import HTTPException
 from pydantic import HttpUrl
 
 from app.config import SONGS_DOWNLOADS_FOLDER, TEMP_DOWNLOADS_FOLDER
-from app.utils import clean_filename, limpiar_archivo_parcial
+from app.database import SessionLocal
+from app.schemas.song import SongStatus
+from app.services.song_service import mark_songs
+from app.utils import clean_filename, limpiar_archivo_parcial, process_and_embed_cover
 
 
 def get_lyrics(title: str, artist: str) -> str | None:
@@ -40,7 +43,7 @@ def extract_metadata(song_info: dict, url: str | None = None) -> dict:
     # Retorna la metadata limpia
     return {
         'video_id': song_info.get('id'),
-        'url': song_info.get('original_url', url),
+        'url': song_info.get('url') or song_info.get('original_url') or url,
         'title': song_info.get('track') or song_info.get('title') or "Título Desconocido",
         'artist': (
             song_info.get('artists')[0] if song_info.get('artists')
@@ -154,7 +157,6 @@ def download_song(url: str, temp=False):
         'nocheckcertificate': True,
 
         # yt-dlp descarga, incrusta la portada, incrusta la metadata y BORRA la imagen temporal automáticamente
-        'writethumbnail': True,
         'postprocessors': [
             {
                 'key': 'FFmpegExtractAudio',
@@ -164,10 +166,6 @@ def download_song(url: str, temp=False):
             {
                 'key': 'FFmpegMetadata',
                 'add_metadata': True,
-            },
-            {
-                'key': 'EmbedThumbnail',
-                'already_have_thumbnail': False,
             }
         ],
     }
@@ -177,20 +175,37 @@ def download_song(url: str, temp=False):
             info = ydl.extract_info(url, download=True)
     except Exception as e:
         limpiar_archivo_parcial()
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se pudo descargar la canción: {e}"
-        ) from e
+        raise Exception(f"No se pudo descargar la canción: {e}") from e
 
-    is_album = 'entries' in info and bool(info.get('entries'))
+    resultado = _organizar_y_descargar_letra(info, save_path)
 
-    if is_album:
-        resultados = []
-        for entrada in info.get("entries", []):
-            if entrada:
-                resultado = _organizar_y_descargar_letra(entrada, save_path)
-                resultados.append(resultado)
-        return {"type": "album", "results": resultados}
-    else:
-        resultado = _organizar_y_descargar_letra(info, save_path)
-        return {"type": "song", **resultado}
+    mp3_path = resultado.get('path')
+    cover_url = resultado['metadata'].get('thumbnail')
+
+    # Procesamos la imagen de forma manual
+    if cover_url:
+        process_and_embed_cover(mp3_path, cover_url)
+
+    return {"type": "song", "result": resultado}
+
+def background_download_task(metadata_list: list[dict]):
+    """
+    Despliega un pool de workers para descargar en paralelo.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(_worker_download, metadata_list)
+
+def _worker_download(song_meta: dict):
+    """El trabajo individual que hará cada worker."""
+    video_id = song_meta["video_id"]
+    url_cancion = song_meta["url"]
+
+    with SessionLocal() as db:
+        try:
+            download_song(url_cancion)
+
+            mark_songs(db, [video_id], SongStatus.downloaded)
+
+        except Exception as e:
+            mark_songs(db, [video_id], SongStatus.error)
+            print(e)

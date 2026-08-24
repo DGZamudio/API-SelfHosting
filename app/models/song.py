@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
+
 from app.database import Base
+
 
 class Song(Base):
     __tablename__ = "songs"
@@ -13,6 +15,7 @@ class Song(Base):
     source_url = Column(String, nullable=False)
     added_at = Column(DateTime, server_default=func.now())
     downloaded_at = Column(DateTime, nullable=True)
+    cover_url = Column(String, nullable=True)
 
     artist_id = Column(Integer, ForeignKey("artists.id"))
     album_id = Column(Integer, ForeignKey("albums.id"))

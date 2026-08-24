@@ -1,6 +1,8 @@
-from pydantic import BaseModel, HttpUrl
 from datetime import datetime
 from enum import Enum
+
+from pydantic import BaseModel, HttpUrl
+
 
 class SongCreate(BaseModel):
     url: HttpUrl

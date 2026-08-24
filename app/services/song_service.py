@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.album import Album
 from app.models.artist import Artist
 from app.models.song import Song
+from app.schemas.song import SongStatus
 
 
 def list_songs(db: Session, status: str | None = None):
@@ -97,10 +98,15 @@ def add_songs_from_metadata(db: Session, songs: list[dict]) -> list[Song]:
 
 def mark_songs(
     db: Session,
-    ids: list[str]
+    ids: list[str],
+    status: SongStatus = SongStatus.downloaded
 ):
-    result = db.execute(
-        update(Song).where(Song.yt_video_id.in_(ids)).values(status="downloaded", downloaded_at=func.now())
+    valores = {"status": status.value}
+
+    if status == SongStatus.downloaded:
+            valores["downloaded_at"] = func.now()
+
+    _ = db.execute(
+        update(Song).where(Song.yt_video_id.in_(ids)).values(**valores)
     )
     db.commit()
-    return result

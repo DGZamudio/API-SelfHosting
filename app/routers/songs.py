@@ -18,8 +18,6 @@ def add_song(song: SongCreate, background_tasks: BackgroundTasks, preview: bool 
     if preview:
         return {"type": data["type"], "result": None, "metadata": data["metadata"]}
 
-    background_tasks.add_task(ytdlp_service.download_song, str(song.url))
-
     if data["type"] == "album":
         result = song_service.add_songs_from_metadata(db, data["metadata"])
     else:
@@ -27,6 +25,8 @@ def add_song(song: SongCreate, background_tasks: BackgroundTasks, preview: bool 
 
     if not result:
         raise HTTPException(status_code=409, detail="Esta canción ya existe en el registro")
+
+    background_tasks.add_task(ytdlp_service.background_download_task, data["metadata"])
 
     return {"type": data["type"], "result": result, "metadata": data["metadata"]}
 
