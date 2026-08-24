@@ -5,3 +5,5 @@ music.db
 downloads/songs/*
 downloads/temp/*
 downloads/thumbnails/*
+docker-compose.yml
+.env

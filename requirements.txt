@@ -1,6 +1,0 @@
-fastapi
-yt-dlp
-sqlalchemy
-uvicorn
-python-multipart
-zipstream-ng
