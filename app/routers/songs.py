@@ -2,8 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.schemas.song import SongCreate
+from app.database import get_music_db
+from app.schemas.song import PaginationParams, SongCreate, SongStatus
 from app.services import song_service, ytdlp_service
 
 router = APIRouter(
@@ -12,7 +12,12 @@ router = APIRouter(
 )
 
 @router.post("/")
-def add_song(song: SongCreate, background_tasks: BackgroundTasks, preview: bool = Query(False), db: Session = Depends(get_db)):
+def add_song(
+    song: SongCreate,
+    background_tasks: BackgroundTasks,
+    preview: bool = Query(False),
+    db: Session = Depends(get_music_db)
+):
     data = ytdlp_service.get_song_metadata(song.url)
 
     if preview:
@@ -31,11 +36,17 @@ def add_song(song: SongCreate, background_tasks: BackgroundTasks, preview: bool 
     return {"type": data["type"], "result": result, "metadata": data["metadata"]}
 
 @router.get("/")
-def list_songs(db: Session = Depends(get_db)):
-    return song_service.list_songs(db)
+def list_songs(
+    pagination: PaginationParams,
+    status: SongStatus | None = None,
+    db: Session = Depends(get_music_db)
+):
+    return song_service.list_songs(db, pagination, status=status)
 
 @router.post("/download")
-def descargar_cancion(song: SongCreate):
+def download_song(
+    song: SongCreate
+):
     res = ytdlp_service.download_song(str(song.url), temp=True)
 
     if res["type"] == "album":

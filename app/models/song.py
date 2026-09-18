@@ -22,3 +22,5 @@ class Song(Base):
 
     artist = relationship("Artist", back_populates="songs")
     album = relationship("Album", back_populates="songs")
+
+    song_playlists = relationship("SongPlaylist", back_populates="song")

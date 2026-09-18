@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from zipstream import ZipStream
 
 from app.config import SONGS_DOWNLOADS_FOLDER
-from app.database import get_db
+from app.database import get_music_db
+from app.schemas.song import SongStatus
 from app.services import song_service, ytdlp_service
 
 router = APIRouter(
@@ -13,8 +14,8 @@ router = APIRouter(
 )
 
 @router.get("/music")
-def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    songs = song_service.list_songs(db, status="pending")
+def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_music_db)):
+    songs = song_service.list_songs(db, status=SongStatus.pending).get("items", [])
     yt_ids = []
 
     for song in songs:
