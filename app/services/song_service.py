@@ -4,14 +4,46 @@ from sqlalchemy.orm import Session
 from app.models.album import Album
 from app.models.artist import Artist
 from app.models.song import Song
-from app.schemas.song import SongStatus
+from app.schemas.song import PaginationParams, SongStatus
 
 
-def list_songs(db: Session, status: str | None = None):
+def list_songs(db: Session, pagination: PaginationParams | None = None, status: SongStatus | None = None): #response_model=PaginatedResponse[SongRead]
     query = db.query(Song)
+
     if status:
         query = query.filter(Song.status == status)
-    return query.all()
+
+    total = query.count()
+
+    songs = None
+
+    if pagination:
+        offset = (pagination.page - 1) * pagination.page_size
+        songs = query.offset(offset).limit(pagination.page_size).all()
+    else:
+        songs = query.all()
+
+    return {
+        "items": songs,
+        "total": total,
+        "page": pagination.page if pagination else -1,
+        "page_size": pagination.page_size if pagination else -1,
+    }
+
+def list_albums(db: Session, pagination: PaginationParams):
+    query = db.query(Album)
+
+    total = query.count()
+
+    offset = (pagination.page - 1) * pagination.page_size
+    albums = query.offset(offset).limit(pagination.page_size).all()
+
+    return {
+        "items": albums,
+        "total": total,
+        "page": pagination.page,
+        "page_size": pagination.page_size,
+    }
 
 def get_song_by_url(db: Session, url):
     song = db.query(Song).filter(Song.source_url == url).first()

@@ -3,13 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine
-from app.routers import downloads, songs
+from app.database import Base, engine_music
+from app.routers import albums, downloads, songs
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine_music)
     yield
 
 app = FastAPI(
@@ -29,4 +29,5 @@ app.add_middleware(
 )
 
 app.include_router(songs.router)
+app.include_router(albums.router)
 app.include_router(downloads.router)
