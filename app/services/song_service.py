@@ -1,9 +1,12 @@
-from sqlalchemy import func, update
-from sqlalchemy.orm import Session
+from pydantic import HttpUrl
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.album import Album
 from app.models.artist import Artist
+from app.models.playlist import Playlist
 from app.models.song import Song
+from app.models.song_playlist import SongPlaylist
 from app.schemas.song import PaginationParams, SongStatus
 
 
@@ -36,10 +39,59 @@ def list_albums(db: Session, pagination: PaginationParams):
     total = query.count()
 
     offset = (pagination.page - 1) * pagination.page_size
-    albums = query.offset(offset).limit(pagination.page_size).all()
+
+    albums = (
+            query
+            .options(
+                joinedload(Album.artist),
+                selectinload(Album.songs)
+            )
+            .offset(offset)
+            .limit(pagination.page_size)
+            .all()
+        )
 
     return {
         "items": albums,
+        "total": total,
+        "page": pagination.page,
+        "page_size": pagination.page_size,
+    }
+
+def list_artists(db: Session, pagination: PaginationParams):
+    query = db.query(Artist)
+
+    total = query.count()
+
+    offset = (pagination.page - 1) * pagination.page_size
+    artists = (
+        query
+        .offset(offset).limit(pagination.page_size)
+        .all()
+    )
+
+    return {
+        "items": artists,
+        "total": total,
+        "page": pagination.page,
+        "page_size": pagination.page_size,
+    }
+
+def list_playlists(db: Session, pagination: PaginationParams):
+    query = db.query(Playlist)
+
+    total = query.count()
+
+    offset = (pagination.page - 1) * pagination.page_size
+    playlists = (
+        query
+        .offset(offset)
+        .limit(pagination.page_size)
+        .all()
+    )
+
+    return {
+        "items": playlists,
         "total": total,
         "page": pagination.page,
         "page_size": pagination.page_size,
@@ -70,33 +122,54 @@ def get_or_create_album(db: Session, title: str, artist: Artist, yt_playlist_id:
     db.flush()
     return album
 
+def get_or_create_playlist(db: Session, title: str, yt_playlist_id: str | None = None) -> Playlist | None:
+    if not title:
+        return None
+    playlist = db.query(Playlist).filter(Playlist.title == title).first()
+    if playlist:
+        return playlist
+    playlist = Playlist(title=title, yt_playlist_id=yt_playlist_id)
+    db.add(playlist)
+    db.flush()
+    return playlist
 
-def add_song_from_metadata(
-    db: Session,
-    metadata: dict
-) -> Song | None:
-    existing = db.query(Song).filter(Song.yt_video_id == metadata["video_id"]).first()
-    if existing:
+def get_playlist_songs(db: Session, playlist_id: int):
+    playlist = db.query(Playlist).where(Playlist.id == playlist_id).first()
+
+    if not playlist:
         return None
 
-    artist = get_or_create_artist(db, metadata["artist"])
-    album = get_or_create_album(db, metadata["album"], artist, yt_playlist_id=None) if metadata["album"] else None
+    stmt = select(Song).join(SongPlaylist, Song.id == SongPlaylist.song_id).where(SongPlaylist.playlist_id == playlist.id)
+    songs = db.scalars(stmt).all()
 
-    song = Song(
-        yt_video_id=metadata["video_id"],
-        title=metadata["title"],
-        artist=artist,
-        album=album,
-        source_url=str(metadata["url"]),
-        status="pending"
-    )
-    db.add(song)
-    db.commit()
-    db.refresh(song)
-    return song
+    return songs
 
-def add_songs_from_metadata(db: Session, songs: list[dict]) -> list[Song]:
+def add_songs_playlist(db: Session, songs_ids: list[int], playlist: Playlist):
+    if not songs_ids:
+        return []
+
+    songs = db.scalars(select(Song).where(Song.id.in_(songs_ids))).all()
+
+    new_relations = [
+        SongPlaylist(playlist=playlist, song=song)
+        for song in songs
+    ]
+
+    if new_relations:
+        db.add_all(new_relations)
+        db.commit()
+
+    return new_relations
+
+
+def add_songs_from_metadata(db: Session, songs: list[dict], yt_playlist_id: str | None = None, playlist: str | None = None) -> list[Song]:
     nuevas = []
+    to_playlist = []
+    playlist_obj = None
+
+    if playlist:
+        playlist_obj = get_or_create_playlist(db, playlist, yt_playlist_id=yt_playlist_id)
+
     for cancion in songs:
         existing = db.query(Song).filter(Song.yt_video_id == cancion["video_id"]).first()
         if existing:
@@ -104,24 +177,36 @@ def add_songs_from_metadata(db: Session, songs: list[dict]) -> list[Song]:
 
         artist = get_or_create_artist(db, cancion["artist"])
         album = (
-            get_or_create_album(db, cancion["album"], artist, yt_playlist_id=None)
+            get_or_create_album(db, cancion["album"], artist, yt_playlist_id=yt_playlist_id)
             if cancion.get("album")
             else None
         )
 
-        nuevas.append(
-            Song(
-                yt_video_id=cancion["video_id"],
-                title=cancion["title"],
-                artist=artist,
-                album=album,
-                source_url=str(cancion["url"]),
-                status="pending",
-            )
+        song = Song(
+            yt_video_id=cancion["video_id"],
+            title=cancion["title"],
+            artist=artist,
+            album=album,
+            source_url=str(cancion["url"]),
+            status="pending"
         )
+
+        nuevas.append(song)
+
+        if playlist_obj:
+            to_playlist.append(
+                SongPlaylist(
+                    song=song,
+                    playlist=playlist_obj
+                )
+            )
 
     if nuevas:
         db.add_all(nuevas)
+    if to_playlist:
+        db.add_all(to_playlist)
+
+    if nuevas or to_playlist:
         db.commit()
         for song in nuevas:
             db.refresh(song)

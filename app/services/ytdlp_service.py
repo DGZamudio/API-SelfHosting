@@ -69,18 +69,29 @@ def get_song_metadata(url: HttpUrl):
             if not info:
                 raise ValueError("No se obtuvo información de la URL.")
 
-            is_playlist = 'entries' in info and bool(info.get('entries'))
-            download_type = "album" if is_playlist else "song"
+            download_type = "song"
+            playlist_title = None
+            if info.get("_type") == "playlist":
+                temp_title = info.get('title')
+                if temp_title and temp_title.split()[0] == "Album":
+                    download_type = "album"
+                else:
+                    download_type = "playlist"
+                    playlist_title = temp_title
+
             songs_meta = []
 
-            if is_playlist:
+            if download_type != "song":
                 for cancion in info.get("entries", []):
-                    if cancion:
-                        songs_meta.append(extract_metadata(cancion))
+                    songs_meta.append(extract_metadata(cancion))
+
+                if download_type == "album":
+                    for song in songs_meta:
+                        song["album"] = info.get('title', "").replace("Album - ", "")
             else:
                 songs_meta.append(extract_metadata(info, url=str(url)))
 
-        return {"metadata": songs_meta, "type": download_type}
+        return {"metadata": songs_meta, "type": download_type, "playlist": playlist_title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener metadata: {e}")
 

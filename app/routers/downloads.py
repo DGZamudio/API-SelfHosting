@@ -1,12 +1,16 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
+import os
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.responses import FileResponse
 from zipstream import ZipStream
 
 from app.config import SONGS_DOWNLOADS_FOLDER
 from app.database import get_music_db
 from app.schemas.song import SongStatus
 from app.services import song_service, ytdlp_service
+from app.services.file_service import create_m3u_playlist
 
 router = APIRouter(
     prefix="/downloads",
@@ -34,4 +38,27 @@ def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_mus
             "Content-Length": str(len(zs)),
             "Last-Modified": zs.last_modified.strftime('%Y-%m-%d %H:%M:%S')
         }
+    )
+
+@router.get("/playlists/{playlist_id}")
+def download_playlist(
+    background_tasks: BackgroundTasks,
+    playlist_id: int = Path(...),
+    playlist_name: str = Query(...),
+    db: Session = Depends(get_music_db)
+):
+    songs = song_service.get_playlist_songs(db, playlist_id)
+
+    if not songs:
+        return HTTPException(404, detail="No se encontraron canciónes")
+
+    m3u_path = create_m3u_playlist(list(songs))
+
+    background_tasks.add_task(os.remove, m3u_path)
+
+    return FileResponse(
+        path=m3u_path,
+        media_type="audio/x-mpegurl",
+        filename=f"{playlist_name}.m3u",
+        background=background_tasks
     )
