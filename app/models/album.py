@@ -9,7 +9,7 @@ class Album(Base):
 
     id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
-    yt_playlist_id = Column(String, unique=True, nullable=True)
+    yt_playlist_id = Column(String, unique=False, nullable=True)
     thumbnail = Column(String, unique=True, nullable=True)
 
     artist_id = Column(Integer, ForeignKey("artists.id"))

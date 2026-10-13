@@ -56,11 +56,12 @@ def add_music(
 @router.get("/songs", response_model=PaginatedResponse[SongSchema])
 def list_songs(
     status: SongStatus | None = None,
+    album: int | None = Query(None),
     page: int = Query(1),
     page_size: int = Query(20),
     db: Session = Depends(get_music_db)
 ):
-    return song_service.list_songs(db, PaginationParams(page=page, page_size=page_size), status=status)
+    return song_service.list_songs(db, PaginationParams(page=page, page_size=page_size), status=status, album=album)
 
 @router.get("/albums", response_model=PaginatedResponse[AlbumSchema])
 def list_albums(

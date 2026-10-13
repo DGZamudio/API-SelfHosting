@@ -1,4 +1,3 @@
-from pydantic import HttpUrl
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -10,11 +9,14 @@ from app.models.song_playlist import SongPlaylist
 from app.schemas.song import PaginationParams, SongStatus
 
 
-def list_songs(db: Session, pagination: PaginationParams | None = None, status: SongStatus | None = None): #response_model=PaginatedResponse[SongRead]
+def list_songs(db: Session, pagination: PaginationParams | None = None, status: SongStatus | None = None, album: int | None = None): #response_model=PaginatedResponse[SongRead]
     query = db.query(Song)
 
     if status:
         query = query.filter(Song.status == status)
+
+    if album:
+        query = query.filter(Song.album_id == album)
 
     total = query.count()
 

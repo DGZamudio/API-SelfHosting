@@ -96,29 +96,33 @@ def get_song_metadata(url: HttpUrl):
         raise HTTPException(status_code=500, detail=f"Error al obtener metadata: {e}")
 
 
-def _organizar_y_descargar_letra(info: dict, save_path: str) -> dict:
+def _organizar_y_descargar_letra(info: dict, save_path: str, metadata=None) -> dict:
     """Mueve el MP3 a su carpeta final (/Artista/Álbum/) y genera el archivo .lrc."""
+
     id_video = info.get('id')
     archivo_inicial = os.path.join(TEMP_DOWNLOADS_FOLDER, f"{id_video}.mp3")
 
-    titulo = info.get('track') or info.get('title') or "Canción Desconocida"
+    meta = metadata
 
-    # Extraer artista
-    artists = info.get('artists')
-    artista = artists[0] if artists else info.get('artist') or info.get('uploader') or "Artista Desconocido"
+    if not meta:
+        print("no hay meta :(((")
+        titulo = info.get('track') or info.get('title') or "Canción Desconocida"
 
-    album = info.get('album') or 'Álbum Desconocido'
+        artists = info.get('artists')
+        artista = artists[0] if artists else info.get('artist') or info.get('uploader') or "Artista Desconocido"
 
-    meta = {
-        'video_id': id_video,
-        'title': titulo,
-        'artist': artista,
-        'album': album,
-        'thumbnail': info.get('thumbnail')
-    }
+        album = info.get('album') or 'Álbum Desconocido'
 
-    folder_path = os.path.join(save_path, clean_filename(artista), clean_filename(album))
-    nombre_final = os.path.join(folder_path, f"{clean_filename(titulo)}.mp3")
+        meta = {
+            'video_id': id_video,
+            'title': titulo,
+            'artist': artista,
+            'album': album,
+            'thumbnail': info.get('thumbnail')
+        }
+
+    folder_path = os.path.join(save_path, clean_filename(meta["artist"]), clean_filename(meta["album"]))
+    nombre_final = os.path.join(folder_path, f"{clean_filename(meta['title'])}.mp3")
 
     errors = []
 
@@ -140,9 +144,8 @@ def _organizar_y_descargar_letra(info: dict, save_path: str) -> dict:
             detail=f"Error al mover la canción al destino final: {e}"
         ) from e
 
-    # Descarga de letra sincronizada externa (.lrc)
     try:
-        letra = get_lyrics(title=titulo, artist=artista)
+        letra = get_lyrics(title=meta["title"], artist=meta["artist"])
         if letra:
             lrc_path = os.path.splitext(nombre_final)[0] + ".lrc"
             with open(lrc_path, "w", encoding="utf-8") as lyric_file:
@@ -153,7 +156,7 @@ def _organizar_y_descargar_letra(info: dict, save_path: str) -> dict:
     return {'path': nombre_final, 'metadata': meta, 'errors': errors}
 
 
-def download_song(url: str, temp=False):
+def download_song(url: str, song_metadata=None, temp=False):
     save_path = TEMP_DOWNLOADS_FOLDER if temp else SONGS_DOWNLOADS_FOLDER
 
     ydl_opts = {
@@ -188,7 +191,7 @@ def download_song(url: str, temp=False):
         limpiar_archivo_parcial()
         raise Exception(f"No se pudo descargar la canción: {e}") from e
 
-    resultado = _organizar_y_descargar_letra(info, save_path)
+    resultado = _organizar_y_descargar_letra(info, save_path, song_metadata)
 
     mp3_path = resultado.get('path')
     cover_url = resultado['metadata'].get('thumbnail')
@@ -213,7 +216,7 @@ def _worker_download(song_meta: dict):
 
     with SessionLocal() as db:
         try:
-            download_song(url_cancion)
+            download_song(url_cancion, song_meta)
 
             mark_songs(db, [video_id], SongStatus.downloaded)
 

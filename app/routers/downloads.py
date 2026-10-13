@@ -23,8 +23,9 @@ def sync_device(background_tasks: BackgroundTasks, db: Session = Depends(get_mus
     yt_ids = []
 
     for song in songs:
-        ytdlp_service.download_song(str(song.source_url))
-        yt_ids.append(str(song.yt_video_id))
+        if song.status != SongStatus.downloaded:
+            ytdlp_service.download_song(str(song.source_url))
+            yt_ids.append(str(song.yt_video_id))
 
     zs = ZipStream.from_path(SONGS_DOWNLOADS_FOLDER)
 
